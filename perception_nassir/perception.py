@@ -307,7 +307,7 @@ class Perception:
             The binary decision labels for each example: 0 normal, 1 anomaly.
         """
         self.fit(X)
-        self.predict(X)
+        return self.predict(X)
 
     @staticmethod
     def _get_rounding_multiplier(data, accuracy):
