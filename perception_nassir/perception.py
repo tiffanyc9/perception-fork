@@ -124,6 +124,7 @@ class Perception:
         self.multi_dim_distance_metric = multi_dim_distance_metric
         self.multi_dim_method = multi_dim_method
 
+
     def fit(self, X):
         """Fit detector.
 
@@ -168,13 +169,10 @@ class Perception:
                           self.multi_dim_distance_metric
                           ).ravel()
 
-            self.rounding_multiplier_ = self._get_rounding_multiplier(
-                X, self.max_decimal_accuracy)
-
             # round and multiply to achieve the required decimal accuracy
             # and integer valued numbers
-            Xg = self._round_scale(
-                X, self.max_decimal_accuracy, self.rounding_multiplier_)
+            self.rounding_multiplier_ = self._get_rounding_multiplier(X, self.max_decimal_accuracy)
+            Xg = self._round_scale(X, self.max_decimal_accuracy, self.rounding_multiplier_)
 
             # find the median of the data (round the median itself in case
             # it is not an integer)
@@ -190,6 +188,7 @@ class Perception:
             self.W_ = len(Xf)
 
             return self
+
 
     def predict(self, X):
         """Predict if a particular sample is an anomaly or not.
@@ -243,8 +242,7 @@ class Perception:
                 Xr = X
 
             # round and multiply to get integers on same scale as training data
-            Xg = self._round_scale(
-                Xr, self.max_decimal_accuracy, self.rounding_multiplier_)
+            Xg = self._round_scale(Xr, self.max_decimal_accuracy, self.rounding_multiplier_)
 
             # self.training_median_ is an integer
             Xf = np.abs(Xg - self.training_median_)
@@ -293,6 +291,7 @@ class Perception:
 
             return self.labels_
 
+
     def fit_predict(self, X):
         """Run fit and predict functions.
 
@@ -309,61 +308,92 @@ class Perception:
         self.fit(X)
         return self.predict(X)
 
+
     @staticmethod
     def _get_rounding_multiplier(data, accuracy):
-        """Find max number of digits after decimal place of rounded numbers.
+        """
+        Determine the minimal power of 10 needed to convert a list of
+        floating-point numbers into integers without losing the specified
+        decimal accuracy.
+
+        This function rounds the data to the specified accuracy, scales it up,
+        and finds the lowest power of 10 by which all numbers can still be 
+        expressed as integers.
 
         Parameters
         ----------
-        data : numpy array of shape (n_samples, n_features)
-            The training input data.
+        data : numpy array
+            The input numerical data (1D or flattened from multidimensional).
 
-        accuracy : integer
-            The desired accuracy to round the data to.
+        accuracy : int
+            The number of decimal places to preserve when integerising the data.
 
         Returns
         -------
-        max_exp : integer
-            The maximum number of digits after decimal places over all input
-            data.
+        min_exponent : int
+            The minimal power of 10 required to multiply the scaled data so that
+            all numbers become integers without losing the specified decimal accuracy.
+
+        Notes
+        -----
+        - This is used internally in the Perception algorithm to integerise
+          numbers while preserving relative differences.
+        - The loop iterates at most `accuracy` times, independent of the array size.
         """
+        # 1. Round data to the max accuracy
         data_rounded = np.round(data, accuracy)
 
-        data_rounded_str = data_rounded.astype('str')
+        # 2. Scale it up by the max factor (10**accuracy)
+        scale_max = 10 ** accuracy
+        temp_scaled = np.rint(data_rounded * scale_max).astype(np.int64)
 
-        max_exp = np.max([el[::-1].find('.') for el in data_rounded_str])
+        # 3. Find the lowest power of 10 that still divides all numbers
+        min_exponent = accuracy
+        for exp in range(accuracy, 0, -1):
+            if np.all(temp_scaled % 10 == 0):
+                temp_scaled = temp_scaled // 10
+                min_exponent -= 1
+            else:
+                break
+        
+        return min_exponent
 
-        if max_exp == -1:
-            return 0
-        else:
-            return max_exp
 
     @staticmethod
     def _round_scale(data, accuracy, rounding_multiplier):
-        """Multiply input numbers by rounding multiplier; take integer part.
+        """
+        Convert floating-point data into integer values while preserving a
+        specified decimal accuracy, using a given rounding multiplier.
 
         Parameters
         ----------
-        data : numpy array of shape (n_samples, n_features)
-            The training input data.
+        data : numpy array
+            The input numerical data (1D or flattened from multidimensional).
 
-        accuracy : integer
-            The desired accuracy to round the data to.
+        accuracy : int
+            The number of decimal places to preserve when integerising the data.
 
-        rounding_multiplier : integer
-            The value to multiply rounded input by (10 ** rounding_multiplier)
-            to ensure list of numbers are integers on the same scale, used in
-            predict stage.
+        rounding_multiplier : int
+            The additional power of 10 multiplier to ensure that all scaled numbers
+            are integers. If None, this should be computed separately before calling.
 
         Returns
         -------
-        integerised_data : numpy array
-            The input data integerised (so that every number is an integer).
+        integerised_data : numpy array of int64
+            The scaled integer values preserving the specified decimal accuracy.
+
+        Notes
+        -----
+        - This function multiplies the input by 10^accuracy, then by 10^rounding_multiplier
+          and converts to int64.
+        - Used internally in the Perception algorithm to simplify subsequent
+          combinatorial and distance calculations.
         """
-        data_rounded = np.round(data, accuracy)
-
-        # get rounded raw input as integers
-        integerised_data = data_rounded * (10 ** rounding_multiplier)
-        integerised_data = integerised_data.astype(int)
-
+        # Step 1: Shift decimal point to preserve accuracy and round to nearest integer
+        scaled = np.rint(data * (10 ** accuracy))
+        
+        # Step 2: Multiply by rounding multiplier and convert to int64
+        integerised_data = (scaled * (10 ** rounding_multiplier)).astype(np.int64)
+        
         return integerised_data
+
