@@ -13,7 +13,7 @@ class Perception:
 
     ***
 
-    Input data must be standardised if it is multidimensional,
+    Note: Input data must be standardised if it is multidimensional,
     using for example: sklearn.preprocessing.StandardScaler.
 
     ***
@@ -74,8 +74,8 @@ class Perception:
         The distance metric to use between points in multidimensional space.
         e.g., 'euclidean', 'Mahalanobis'.
 
-    multi_dim_method : str, optional (default=DfM)
-        The multi-dimensional data method to use. e.g., "DfM", "indpendent".
+    multi_dim_method : str, optional (default=Direct)
+        The multi-dimensional data method to use. e.g., "Direct", "indpendent".
         These will be implemented in future.
 
     Attributes
@@ -102,12 +102,11 @@ class Perception:
 
     scores_ : numpy array
         The anomaly scores of the predicted data. The higher, the more
-        abnormal. Anomalies tend to have higher scores. This value is available
-        once the detector is fitted.
+        abnormal. Anomalies tend to have higher scores. 
 
     labels_ : numpy array of either 0 or 1
         The binary decision labels for each example: 0 normal, 1 anomaly. This
-        is obtained (effectively) parameter free.
+        is obtained (effectively) free from parameter tuning.
 
     anomalies_ : numpy array
         The anomalies from the original input data that are detected by the
@@ -118,7 +117,7 @@ class Perception:
     def __init__(self,
                  max_decimal_accuracy=4,
                  multi_dim_distance_metric='euclidean',
-                 multi_dim_method='DfM'):
+                 multi_dim_method='Direct'):
 
         self.max_decimal_accuracy = max_decimal_accuracy
         self.multi_dim_distance_metric = multi_dim_distance_metric
@@ -142,19 +141,10 @@ class Perception:
         assert X.size > 0, "numpy array must be non-empty"
         assert X.ndim < 3, "array can only be 1 or 2 dimensional"
 
-        # get the dimensionality of the data
-
         # if dimensionality is 1, X.shape[1] not callable
-        if X.ndim == 1:
-            dimensionality = 1
-        elif X.ndim == 2 and X.shape[1] == 1:
-            # convert the array to 1-dimensional
-            X = np.squeeze(X, axis=1)
-            dimensionality = 1
-        elif X.shape[1] > 1:
-            dimensionality = 2
+        X, dimensionality = self._check_and_process_dimensionality(X)
 
-        if self.multi_dim_method == 'DfM':
+        if self.multi_dim_method == 'Direct':
 
             # in the case of multidimensional data, transform data to 1D data
             if dimensionality > 1:
@@ -169,13 +159,11 @@ class Perception:
                           self.multi_dim_distance_metric
                           ).ravel()
 
-            # round and multiply to achieve the required decimal accuracy
-            # and integer valued numbers
+            # round and multiply to achieve the required decimal accuracy and integers
             self.rounding_multiplier_ = self._get_rounding_multiplier(X, self.max_decimal_accuracy)
             Xg = self._round_scale(X, self.max_decimal_accuracy, self.rounding_multiplier_)
 
-            # find the median of the data (round the median itself in case
-            # it is not an integer)
+            # find the median of the data (round again for safety to be an integer)
             self.training_median_ = np.round(np.median(Xg))
 
             # take the distance from the median for all points
@@ -212,14 +200,7 @@ class Perception:
         # get the dimensionality of the data
 
         # if dimensionality is 1, X.shape[1] not callable
-        if X.ndim == 1:
-            dimensionality = 1
-        elif X.ndim == 2 and X.shape[1] == 1:
-            # convert the array to 1-dimensional
-            X = np.squeeze(X, axis=1)
-            dimensionality = 1
-        elif X.shape[1] > 1:
-            dimensionality = 2
+        X, dimensionality = self._check_and_process_dimensionality(X)
 
         if self.S_ > 0:
             logS_ = math.log(self.S_)
@@ -230,7 +211,7 @@ class Perception:
         sigma = -1
         logW_ = math.log(self.W_)
 
-        if self.multi_dim_method == 'DfM':
+        if self.multi_dim_method == 'Direct':
 
             # keep original X for recovering detected anomalies
             if dimensionality > 1:
@@ -310,6 +291,23 @@ class Perception:
 
 
     @staticmethod
+    def _check_and_process_dimensionality(X):
+        if X.ndim == 1:
+            dimensionality = 1
+            X_processed = X
+        elif X.ndim == 2 and X.shape[1] == 1:
+            X_processed = np.squeeze(X, axis=1)
+            dimensionality = 1
+        elif X.ndim == 2 and X.shape[1] > 1:
+            X_processed = X
+            dimensionality = 2
+        else:
+            raise ValueError("Input array must be 1D or 2D with at least one feature.")
+
+        return X_processed, dimensionality
+
+
+    @staticmethod
     def _get_rounding_multiplier(data, accuracy):
         """
         Determine the minimal power of 10 needed to convert a list of
@@ -361,34 +359,7 @@ class Perception:
 
     @staticmethod
     def _round_scale(data, accuracy, rounding_multiplier):
-        """
-        Convert floating-point data into integer values while preserving a
-        specified decimal accuracy, using a given rounding multiplier.
 
-        Parameters
-        ----------
-        data : numpy array
-            The input numerical data (1D or flattened from multidimensional).
-
-        accuracy : int
-            The number of decimal places to preserve when integerising the data.
-
-        rounding_multiplier : int
-            The additional power of 10 multiplier to ensure that all scaled numbers
-            are integers. If None, this should be computed separately before calling.
-
-        Returns
-        -------
-        integerised_data : numpy array of int64
-            The scaled integer values preserving the specified decimal accuracy.
-
-        Notes
-        -----
-        - This function multiplies the input by 10^accuracy, then by 10^rounding_multiplier
-          and converts to int64.
-        - Used internally in the Perception algorithm to simplify subsequent
-          combinatorial and distance calculations.
-        """
         # Step 1: Shift decimal point to preserve accuracy and round to nearest integer
         scaled = np.rint(data * (10 ** accuracy))
         
