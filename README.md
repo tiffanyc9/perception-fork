@@ -32,7 +32,7 @@ The 'Notebooks' folder contains a getting started guide and tutorial examples th
 
 ```pip install perception_nassir```
 
-## Install all dependencies from the requirements file
+## Install all dependencies from the requirements file:
 ```pip install -r requirements.txt```
 
 ## Usage:
